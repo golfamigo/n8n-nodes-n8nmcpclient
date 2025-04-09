@@ -399,7 +399,15 @@ export class SmartMcp implements INodeType {
 							this.logger.debug(`Tool executed successfully: ${toolName}`);
 							processedResult = result;
 						}
-						returnData.push({ json: { result: processedResult } as IDataObject });
+						// Push the processed result directly into the json property for the output item
+						if (processedResult && typeof processedResult === 'object') {
+							returnData.push({ json: processedResult as IDataObject });
+						} else {
+							// Handle cases where processedResult might not be the expected object (e.g., parsing failed or not applicable)
+							this.logger.warn(`Processed result for tool ${toolName} is not an object, returning raw result object.`);
+							// Push the original result object instead, wrapped appropriately
+							returnData.push({ json: { rawResult: result } as IDataObject });
+						}
 
 					} catch (error) {
 						this.logger.error(`Failed to execute tool '${toolName}': ${(error as Error).message}`);
