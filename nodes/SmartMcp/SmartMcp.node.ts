@@ -428,7 +428,19 @@ export class SmartMcp implements INodeType {
 					const uri = this.getNodeParameter('resourceUri', 0) as string;
 					if (!uri) throw new NodeOperationError(this.getNode(), 'Resource URI is required for readResource operation', { itemIndex: 0 });
 					const result = await client.readResource({ uri });
-					returnData.push({ json: result as IDataObject });
+					let processedResult: unknown;
+					if ('text' in result && typeof result.text === 'string' && result.mimeType === 'application/json') {
+					    try {
+					        processedResult = JSON.parse(result.text);
+					        this.logger.debug(`Parsed JSON resource for ${uri}`);
+					    } catch (parseError) {
+					        this.logger.warn(`Failed to parse JSON from resource text for URI ${uri}: ${(parseError as Error).message}`);
+					        processedResult = result; // Fallback
+					    }
+					} else {
+					    processedResult = result;
+					}
+					returnData.push({ json: { resource: processedResult } as IDataObject });
 					break;
 				}
 				case 'listTools': {
