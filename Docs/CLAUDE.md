@@ -6,7 +6,7 @@ npm run build        # Build ESM and CJS versions
 npm run lint         # Run ESLint
 npm test             # Run all tests
 npx jest path/to/file.test.ts  # Run specific test file
-npx jest -t "test name"        # Run tests matching pattern
+npx jest -t "test name"        # Run tests matching pattern.
 ```
 
 ## Code Style Guidelines
