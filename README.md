@@ -1,46 +1,75 @@
-![Banner image](https://user-images.githubusercontent.com/10284570/173569848-c624317f-42b1-45a6-ab09-f0ea3c247648.png)
+# n8n-nodes-n8nmcpclient
 
-# n8n-nodes-starter
+This is an n8n community node package. It provides nodes to interact with servers implementing the Model Context Protocol (MCP).
 
-This repo contains example nodes to help you get started building your own custom integrations for [n8n](n8n.io). It includes the node linter and other dependencies.
+The [Model Context Protocol (MCP)](https://modelcontextprotocol.io) allows applications to provide context for LLMs in a standardized way, separating the concerns of providing context from the actual LLM interaction. This node package allows n8n workflows, especially AI Agents, to connect to and utilize MCP servers.
 
-To make your custom node available to the community, you must create it as an npm package, and [submit it to the npm registry](https://docs.npmjs.com/packages-and-modules/contributing-packages-to-the-registry).
+[n8n](https://n8n.io/) is a [fair-code licensed](https://docs.n8n.io/reference/license/) workflow automation platform.
 
-## Prerequisites
+[Installation](#installation)
+[Nodes](#nodes)
+[Operations](#operations)
+[Credentials](#credentials)
+[Compatibility](#compatibility)
+[Usage](#usage)
+[Resources](#resources)
 
-You need the following installed on your development machine:
+## Installation
 
-* [git](https://git-scm.com/downloads)
-* Node.js and pnpm. Minimum version Node 18. You can find instructions on how to install both using nvm (Node Version Manager) for Linux, Mac, and WSL [here](https://github.com/nvm-sh/nvm). For Windows users, refer to Microsoft's guide to [Install NodeJS on Windows](https://docs.microsoft.com/en-us/windows/dev-environment/javascript/nodejs-on-windows).
-* Install n8n with:
-  ```
-  pnpm install n8n -g
-  ```
-* Recommended: follow n8n's guide to [set up your development environment](https://docs.n8n.io/integrations/creating-nodes/build/node-development-environment/).
+Follow the [installation guide](https://docs.n8n.io/integrations/community-nodes/installation/) in the n8n community nodes documentation. Search for `n8n-nodes-n8nmcpclient`.
 
-## Using this starter
+## Nodes
 
-These are the basic steps for working with the starter. For detailed guidance on creating and publishing nodes, refer to the [documentation](https://docs.n8n.io/integrations/creating-nodes/).
+*   **Smart MCP Client (`smartMcp`)**: Connects to an MCP server via STDIO or SSE and allows interaction with its capabilities (tools, resources, prompts). Designed for use with n8n AI Agents.
 
-1. [Generate a new repository](https://github.com/n8n-io/n8n-nodes-starter/generate) from this template repository.
-2. Clone your new repo:
-   ```
-   git clone https://github.com/<your organization>/<your-repo-name>.git
-   ```
-3. Run `pnpm i` to install dependencies.
-4. Open the project in your editor.
-5. Browse the examples in `/nodes` and `/credentials`. Modify the examples, or replace them with your own nodes.
-6. Update the `package.json` to match your details.
-7. Run `pnpm lint` to check for errors or `pnpm lintfix` to automatically fix errors when possible.
-8. Test your node locally. Refer to [Run your node locally](https://docs.n8n.io/integrations/creating-nodes/test/run-node-locally/) for guidance.
-9. Replace this README with documentation for your node. Use the [README_TEMPLATE](README_TEMPLATE.md) to get started.
-10. Update the LICENSE file to use your details.
-11. [Publish](https://docs.npmjs.com/packages-and-modules/contributing-packages-to-the-registry) your package to npm.
+## Operations (Smart MCP Client)
 
-## More information
+*   **Discover Capabilities (for AI Agent)**: Connects to the MCP server and lists all available tools, resources, and prompts. Resources and prompts are presented as pseudo-tools (prefixed with `resource_` or `prompt_`) with associated metadata, making them discoverable and usable by AI Agents through the standard tool execution mechanism. This is the recommended operation when using this node with an AI Agent.
+*   **Execute Tool**: Executes a specific tool (either a real MCP tool or a pseudo-tool representing a resource read or prompt retrieval) on the connected MCP server. Requires the tool name and parameters in JSON format.
+*   **Read Resource**: Reads the content of a specific resource URI from the MCP server.
+*   **Get Prompt**: Retrieves a specific prompt template from the MCP server.
+*   **List Tools**: Lists only the actual tools available on the MCP server.
+*   **List Resources**: Lists only the resources available on the MCP server.
+*   **List Resource Templates**: Lists the resource templates available on the MCP server.
+*   **List Prompts**: Lists only the prompts available on the MCP server.
 
-Refer to our [documentation on creating nodes](https://docs.n8n.io/integrations/creating-nodes/) for detailed information on building your own nodes.
+## Credentials
 
-## License
+This node package includes two credential types:
 
-[MIT](https://github.com/n8n-io/n8n-nodes-starter/blob/master/LICENSE.md)
+1.  **MCP Client (STDIO) API (`mcpClientApi`)**:
+    *   Used for connecting to MCP servers launched as local command-line processes via Standard Input/Output (STDIO).
+    *   **Command**: The command to execute to start the MCP server (e.g., `node path/to/server.js`, `python script.py`).
+    *   **Arguments**: Space-separated arguments to pass to the command.
+    *   **Environments**: Comma-separated `NAME=VALUE` pairs for environment variables needed by the server (e.g., API keys).
+
+2.  **MCP Client (SSE) API (`mcpClientSseApi`)**:
+    *   Used for connecting to remote MCP servers via Server-Sent Events (SSE) over HTTP.
+    *   **SSE URL**: The URL of the MCP server's SSE endpoint (e.g., `http://localhost:3001/sse`).
+    *   **Messages Post Endpoint** (Optional): A custom URL endpoint for sending messages back to the server if it differs from the base SSE URL.
+    *   **Additional Headers** (Optional): Headers to include in requests, typically for authentication (e.g., `Authorization: Bearer YOUR_TOKEN`). Format: one header per line (`Header-Name: Value`).
+
+## Compatibility
+
+*   Requires n8n version 1.0 or later.
+*   Requires Node.js version 18.10 or later.
+
+## Usage
+
+When using the **Smart MCP Client** node with an n8n **AI Agent**:
+
+1.  Add the **Smart MCP Client** node to your workflow.
+2.  Configure the **Connection Type** and the corresponding **Credentials**.
+3.  Set the **Operation** to **Discover Capabilities (for AI Agent)**.
+4.  Connect the output of the **Smart MCP Client** node to the **Tool** input of the **AI Agent** node.
+
+The AI Agent will automatically call the `discoverCapabilities` operation to learn about the available tools, resources, and prompts from the MCP server. It can then decide to use any of these capabilities by calling the `executeTool` operation on the Smart MCP Client node, passing the appropriate tool name (e.g., `get_weather`, `resource_userProfile`, `prompt_summarize`) and parameters.
+
+For manual workflow usage (without an AI Agent), you can select specific operations like `Execute Tool`, `Read Resource`, etc., and provide the necessary parameters directly in the node's UI.
+
+## Resources
+
+*   [n8n community nodes documentation](https://docs.n8n.io/integrations/community-nodes/)
+*   [Model Context Protocol (MCP) Documentation](https://modelcontextprotocol.io)
+*   [MCP Specification](https://spec.modelcontextprotocol.io)
+*   [MCP TypeScript SDK](https://github.com/modelcontextprotocol/typescript-sdk)

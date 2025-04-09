@@ -5,6 +5,7 @@ import {
 	INodeTypeDescription,
 	NodeOperationError,
 	IDataObject,
+	NodeConnectionType, // Re-add NodeConnectionType import again
 } from 'n8n-workflow';
 import { DynamicStructuredTool } from '@langchain/core/tools';
 import { z } from 'zod';
@@ -24,6 +25,7 @@ import { Transport } from '@modelcontextprotocol/sdk/shared/transport.js';
  	GetPromptResult,
 	// Import specific content types for checking
 	TextContent,
+	// Revert to any[] as specific types might not be exported
 } from '@modelcontextprotocol/sdk/types.js';
 import { URL } from 'url'; // Explicitly import URL
 
@@ -32,13 +34,14 @@ declare const process: {
 };
 
 // Helper function remains the same
-function createZodSchemaFromMcpSchema(mcpSchema: any): z.ZodObject<any> {
+// Helper function remains the same - Keep 'any' here as schema structure is dynamic
+function createZodSchemaFromMcpSchema(mcpSchema: any): z.ZodObject<any> { // eslint-disable-line @typescript-eslint/no-explicit-any
 	if (!mcpSchema?.properties) {
 		return z.object({});
 	}
 	return z.object(
 		Object.entries(mcpSchema.properties).reduce(
-			(acc: any, [key, prop]: [string, any]) => {
+			(acc: any, [key, prop]: [string, any]) => { // eslint-disable-line @typescript-eslint/no-explicit-any
 				let zodType: z.ZodType;
 				switch (prop.type) {
 					case 'string': zodType = z.string(); break;
@@ -67,7 +70,7 @@ async function getConnectedClientHelper(context: IExecuteFunctions): Promise<Cli
 	let connectionType = 'cmd';
 	try {
 		connectionType = context.getNodeParameter('connectionType', 0) as string;
-	} catch (error) {
+	} catch { // Remove unused 'error' variable
 		context.logger.debug('ConnectionType parameter not found, using default "cmd" transport');
 	}
 
@@ -157,9 +160,8 @@ export class SmartMcp implements INodeType {
 		subtitle: '={{$parameter["operation"]}}',
 		description: 'Connects to and interacts with an MCP server, discovering capabilities for AI Agents.',
 		defaults: { name: 'Smart MCP Client' },
-		inputs: ['main'],
-		outputs: ['main'],
-		// @ts-ignore - Ignore potential TS error for usableAsTool if types are outdated
+		inputs: [NodeConnectionType.Main], // Use enum value again to satisfy TS
+		outputs: [NodeConnectionType.Main], // Use enum value again to satisfy TS
 		usableAsTool: true,
 		credentials: [
 			{ name: 'mcpClientApi', required: false, displayOptions: { show: { connectionType: ['cmd'] } } },
@@ -199,16 +201,16 @@ export class SmartMcp implements INodeType {
 		const operation = this.getNodeParameter('operation', 0) as string;
 		let client: Client | undefined;
 		let transportClosed = false;
-		const executionContext = this; // Capture the 'this' context for use in closures
+		// Remove 'this' alias: const executionContext = this;
 
 		const closeClientAndTransport = async (c: Client | undefined) => {
 			if (c && !transportClosed) {
 				try {
 					await c.close();
 					transportClosed = true;
-					executionContext.logger.debug('MCP Client closed.');
+					this.logger.debug('MCP Client closed.'); // Use 'this' directly
 				} catch (closeError) {
-					executionContext.logger.error(`Error closing MCP client: ${closeError}`);
+					this.logger.error(`Error closing MCP client: ${closeError}`); // Use 'this' directly
 				}
 			}
 		};
@@ -218,7 +220,7 @@ export class SmartMcp implements INodeType {
 			client = await getConnectedClientHelper(this);
 
 			if (!client) {
-				throw new NodeOperationError(this.getNode(), 'Failed to establish MCP client connection.', { itemIndex: 0 });
+				throw new NodeOperationError(this.getNode(), 'Failed to establish MCP client connection.', { itemIndex: 0 }); // Use 'this' directly
 			}
 
 			switch (operation) {
@@ -234,7 +236,7 @@ export class SmartMcp implements INodeType {
 
 					// Process Tools
 					if (toolsResult.status === 'fulfilled' && toolsResult.value?.tools) {
-						const tools: any[] = toolsResult.value.tools;
+						const tools: any[] = toolsResult.value.tools; // eslint-disable-line @typescript-eslint/no-explicit-any
 						this.logger.debug(`Found ${tools.length} real tools.`);
 						tools.forEach(tool => {
 							const schema = createZodSchemaFromMcpSchema(tool.inputSchema);
@@ -244,15 +246,15 @@ export class SmartMcp implements INodeType {
 								schema,
 								metadata: { type: "tool" },
 								func: async (params): Promise<string> => {
-									if (!client) throw new NodeOperationError(executionContext.getNode(), "MCP Client not connected during tool execution");
+									if (!client) throw new NodeOperationError(this.getNode(), "MCP Client not connected during tool execution"); // Use 'this' directly
 									try {
 										const result = await client.callTool({ name: tool.name, arguments: params });
 										const firstContent = (Array.isArray(result.content) && result.content.length > 0) ? result.content[0] : undefined;
 										return String((firstContent && firstContent.type === 'text') ? (firstContent as TextContent).text : JSON.stringify(result));
 									} catch (error) {
-										executionContext.logger.error(`Error executing tool ${tool.name}: ${error}`);
+										this.logger.error(`Error executing tool ${tool.name}: ${error}`); // Use 'this' directly
 										const description = typeof (error as McpError)?.data === 'object' ? JSON.stringify((error as McpError).data) : String((error as McpError)?.data ?? '');
-										throw new NodeOperationError(executionContext.getNode(), `Failed executing tool ${tool.name}: ${(error as Error).message}`, { description });
+										throw new NodeOperationError(this.getNode(), `Failed executing tool ${tool.name}: ${(error as Error).message}`, { description }); // Use 'this' directly
 									}
 								}
 							}));
@@ -263,7 +265,7 @@ export class SmartMcp implements INodeType {
 
 					// Process Resources
 					if (resourcesResult.status === 'fulfilled' && resourcesResult.value?.resources) {
-						const resources: any[] = resourcesResult.value.resources;
+						const resources: any[] = resourcesResult.value.resources; // eslint-disable-line @typescript-eslint/no-explicit-any
 						this.logger.debug(`Found ${resources.length} resources.`);
 						resources.forEach(resource => {
 							const resourceToolName = `resource_${resource.name}`;
@@ -275,16 +277,16 @@ export class SmartMcp implements INodeType {
 								}),
 								metadata: { type: "resource", originalName: resource.name, originalUri: resource.uri },
 								func: async (params): Promise<string> => {
-									if (!client) throw new NodeOperationError(executionContext.getNode(), "MCP Client not connected during resource read");
+									if (!client) throw new NodeOperationError(this.getNode(), "MCP Client not connected during resource read"); // Use 'this' directly
 									const targetUri = params.uri || resource.uri;
 									try {
 										const result = await client.readResource({ uri: targetUri });
 										const firstContent = (Array.isArray(result.contents) && result.contents.length > 0) ? result.contents[0] : undefined;
 										return String(firstContent && 'text' in firstContent ? firstContent.text : JSON.stringify(result));
 									} catch (error) {
-										executionContext.logger.error(`Error reading resource ${resource.name} (URI: ${targetUri}): ${error}`);
+										this.logger.error(`Error reading resource ${resource.name} (URI: ${targetUri}): ${error}`); // Use 'this' directly
 										const description = typeof (error as McpError)?.data === 'object' ? JSON.stringify((error as McpError).data) : String((error as McpError)?.data ?? '');
-										throw new NodeOperationError(executionContext.getNode(), `Failed reading resource ${resource.name}: ${(error as Error).message}`, { description });
+										throw new NodeOperationError(this.getNode(), `Failed reading resource ${resource.name}: ${(error as Error).message}`, { description }); // Use 'this' directly
 									}
 								}
 							}));
@@ -295,7 +297,7 @@ export class SmartMcp implements INodeType {
 
 					// Process Prompts
 					if (promptsResult.status === 'fulfilled' && promptsResult.value?.prompts) {
-						const prompts: any[] = promptsResult.value.prompts;
+						const prompts: any[] = promptsResult.value.prompts; // eslint-disable-line @typescript-eslint/no-explicit-any
 						this.logger.debug(`Found ${prompts.length} prompts.`);
 						prompts.forEach(prompt => {
 							const promptToolName = `prompt_${prompt.name}`;
@@ -305,15 +307,15 @@ export class SmartMcp implements INodeType {
 								description: prompt.description || `Get the ${prompt.name} prompt template`,
 								schema,
 								metadata: { type: "prompt", originalName: prompt.name },
-								func: async (params): Promise<string> => {
-									if (!client) throw new NodeOperationError(executionContext.getNode(), "MCP Client not connected during prompt get");
+								func: async (): Promise<string> => { // Remove unused _params
+									if (!client) throw new NodeOperationError(this.getNode(), "MCP Client not connected during prompt get"); // Use 'this' directly
 									try {
 										const result = await client.getPrompt({ name: prompt.name /*, arguments: params */ });
 										return JSON.stringify(result);
 									} catch (error) {
-										executionContext.logger.error(`Error getting prompt ${prompt.name}: ${error}`);
+										this.logger.error(`Error getting prompt ${prompt.name}: ${error}`); // Use 'this' directly
 										const description = typeof (error as McpError)?.data === 'object' ? JSON.stringify((error as McpError).data) : String((error as McpError)?.data ?? '');
-										throw new NodeOperationError(executionContext.getNode(), `Failed getting prompt ${prompt.name}: ${(error as Error).message}`, { description });
+										throw new NodeOperationError(this.getNode(), `Failed getting prompt ${prompt.name}: ${(error as Error).message}`, { description }); // Use 'this' directly
 									}
 								}
 							}));
@@ -340,7 +342,7 @@ export class SmartMcp implements INodeType {
 
 				case 'executeTool': {
 					const toolName = this.getNodeParameter('toolName', 0) as string;
-					let toolParams: any = {};
+					let toolParams: any = {}; // eslint-disable-line @typescript-eslint/no-explicit-any
 
 					try {
 						const rawParams = this.getNodeParameter('toolParameters', 0);

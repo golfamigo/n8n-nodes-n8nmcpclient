@@ -1,9 +1,9 @@
 {
-   "name": "n8n-nodes-n8nmcpclient",
-   "version": "0.1.0",
-   "description": "An n8n node for connecting and interacting with MCP servers, especially designed for AI Agents with automatic capability discovery.",
-   "keywords": [
-     "n8n-community-node-package",
+  "name": "n8n-nodes-n8nmcpclient",
+  "version": "0.1.2",
+  "description": "An n8n node for connecting and interacting with MCP servers, especially designed for AI Agents with automatic capability discovery.",
+  "keywords": [
+    "n8n-community-node-package",
     "n8n-community-node-n8nmcpclient",
     "n8n-nodes-n8nmcpclient"
   ],
@@ -22,13 +22,13 @@
     "pnpm": ">=9.1"
   },
   "packageManager": "pnpm@9.1.4",
-  "main": "index.js",
+  "main": "dist/index.js",
   "scripts": {
     "preinstall": "npx only-allow pnpm",
     "build": "rimraf ./dist && tsc && gulp build:icons",
     "dev": "tsc --watch",
     "format": "prettier nodes credentials --write",
-    "lint": "eslint nodes credentials package.json",
+    "lint": "eslint .",
     "lintfix": "eslint nodes credentials package.json --fix",
     "prepublishOnly": "pnpm build && pnpm lint -c .eslintrc.prepublish.js nodes credentials package.json"
   },
@@ -36,35 +36,37 @@
     "dist"
   ],
   "n8n": {
-     "n8nNodesApiVersion": 1,
-     "credentials": [
-       "dist/credentials/McpClientApi.credentials.js",
-       "dist/credentials/McpClientSseApi.credentials.js"
-     ],
-     "nodes": [
+    "n8nNodesApiVersion": 1,
+    "credentials": [
+      "dist/credentials/McpClientApi.credentials.js",
+      "dist/credentials/McpClientSseApi.credentials.js"
+    ],
+    "nodes": [
       "dist/nodes/SmartMcp/SmartMcp.node.js"
     ]
   },
   "devDependencies": {
+    "@eslint/eslintrc": "^3.3.1",
+    "@eslint/js": "^9.24.0",
     "@types/node": "^22.14.0",
     "@typescript-eslint/eslint-plugin": "^8.29.0",
     "@typescript-eslint/parser": "^7.15.0",
-    "eslint": "^8.57.0",
+    "esbuild": "^0.25.2",
+    "eslint": "^9.24.0",
     "eslint-plugin-n8n-nodes-base": "^1.16.1",
+    "globals": "^16.0.0",
     "gulp": "^4.0.2",
     "prettier": "^3.3.2",
+    "rimraf": "^5.0.10",
     "typescript": "^5.5.3",
-    "rimraf": "^5.0.10"
+    "typescript-eslint": "^8.29.1"
   },
   "dependencies": {
     "@langchain/core": "^0.3.43",
-    "@modelcontextprotocol/sdk": "1.8.0",
-    "pkce-challenge": "5.0.0",
+    "@modelcontextprotocol/sdk": "1.9.0",
+    "sqlite3": "^5.1.7",
     "zod": "^3.24.2",
     "zod-to-json-schema": "^3.24.5"
-  },
-  "overrides": {
-    "pkce-challenge": "^5.0.0"
   },
   "peerDependencies": {
     "n8n-workflow": "*"
