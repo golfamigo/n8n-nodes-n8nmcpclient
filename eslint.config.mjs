@@ -39,7 +39,8 @@ export default tseslint.config(
             "**/dist/**",
             "**/*.js", // Assuming you want to lint only TS files based on old ignore
             "eslint.config.mjs", // Ignore the config file itself (updated extension)
-            "package.json", // Explicitly ignore package.json from general TS rules
+            "Docs/**", // Ignore all files in Docs directory
+            // "package.json", // Removed global ignore, handled by specific config block
         ],
     },
 
