@@ -361,6 +361,7 @@ export class SmartMcp implements INodeType {
 						this.logger.debug(`Executing tool: ${toolName} with params: ${JSON.stringify(toolParams)}`);
 
 						let result: CallToolResult | ReadResourceResult | GetPromptResult;
+						let processedResult: unknown; // Variable for potentially parsed result
 
 						if (toolName.startsWith("resource_")) {
 							const resourceUri = toolParams.uri;
@@ -369,16 +370,36 @@ export class SmartMcp implements INodeType {
 							}
 							result = await client.readResource({ uri: resourceUri });
 							this.logger.debug(`Resource read successfully: ${resourceUri}`);
+
+						// --- BEGIN INSERTED CODE ---
+						// Check if the result has text content and is JSON
+						if ('text' in result && typeof result.text === 'string' && result.mimeType === 'application/json') {
+							try {
+								processedResult = JSON.parse(result.text); // Parse the JSON string
+								this.logger.debug(`Parsed JSON resource for ${resourceUri}`);
+							} catch (parseError) {
+								this.logger.warn(`Failed to parse JSON from resource text for URI ${resourceUri}: ${(parseError as Error).message}`);
+								// Fallback to the original result if parsing fails
+								processedResult = result;
+							}
+						} else {
+							// If not JSON in text, use the result as is
+							processedResult = result;
+						}
+						// --- END INSERTED CODE ---
+
 						} else if (toolName.startsWith("prompt_")) {
 							const promptName = toolName.replace("prompt_", "");
 							result = await client.getPrompt({ name: promptName /*, arguments: toolParams */ });
 							this.logger.debug(`Prompt retrieved successfully: ${promptName}`);
+						processedResult = result; // Assign result directly for prompts
 						} else {
 							// Cast the result to CallToolResult to help TypeScript understand the structure
 							result = await client.callTool({ name: toolName, arguments: toolParams }) as CallToolResult;
 							this.logger.debug(`Tool executed successfully: ${toolName}`);
+							processedResult = result;
 						}
-						returnData.push({ json: { result } as IDataObject });
+						returnData.push({ json: { result: processedResult } as IDataObject });
 
 					} catch (error) {
 						this.logger.error(`Failed to execute tool '${toolName}': ${(error as Error).message}`);
