@@ -63,7 +63,7 @@ export default tseslint.config(
         rules: {
             // Keep existing rules for package.json
             ...(config.rules || {}),
-            'n8n-nodes-base/community-package-json-name-still-default': 'off',
+            'n8n-nodes-base/community-package-json-name-still-default': 'error',
         }
     })),
 
