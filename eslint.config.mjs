@@ -61,10 +61,16 @@ export default tseslint.config(
     ...compat.extends("plugin:n8n-nodes-base/community").map(config => ({
         ...config,
         files: ["package.json"], // Target package.json specifically
+        // Try explicitly disabling the TS parser for JSON files
+        languageOptions: {
+             parser: undefined, // Attempt to prevent TS parser
+        },
         rules: {
             // Keep existing rules for package.json
             ...(config.rules || {}),
             'n8n-nodes-base/community-package-json-name-still-default': 'error',
+            // Explicitly disable TS rules that shouldn't apply to JSON
+            '@typescript-eslint/no-unused-expressions': 'off',
         }
     })),
 
