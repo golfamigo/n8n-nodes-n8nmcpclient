@@ -23,7 +23,7 @@ import { Transport } from '@modelcontextprotocol/sdk/shared/transport.js';
 	ResourceTemplate,
 } from '@modelcontextprotocol/sdk/types.js';
 import { URL } from 'url';
-import * as fs from 'node:fs';
+
 
 declare const process: {
 	env: Record<string, string | undefined>;
@@ -321,14 +321,7 @@ export class SmartMcp implements INodeType {
 						this.logger.warn(`Failed to list prompts: ${promptsResult.reason}`);
 					}
 					// 在處理 resourceTemplatesResult 之前添加這段日誌代碼
-
-					fs.writeFileSync('./resourceTemplates-debug.json', JSON.stringify({
-						status: resourceTemplatesResult.status,
-						value: resourceTemplatesResult.status === 'fulfilled' ? resourceTemplatesResult.value : null,
-						hasTemplates: resourceTemplatesResult.status === 'fulfilled' && !!resourceTemplatesResult.value?.templates,
-						templatesCount: resourceTemplatesResult.status === 'fulfilled' ? (Array.isArray(resourceTemplatesResult.value?.templates) ? resourceTemplatesResult.value.templates.length : 0) : 0,
-						firstTemplate: resourceTemplatesResult.status === 'fulfilled' ? (Array.isArray(resourceTemplatesResult.value?.templates) ? resourceTemplatesResult.value.templates[0] : null) : null
-					}, null, 2));
+					// Removed fs.writeFileSync block (lines 325-331)
 
 					// Step 5: Process Resource Templates (from Promise.allSettled result)
 					if (resourceTemplatesResult.status === 'fulfilled' && resourceTemplatesResult.value?.resourceTemplates) {
@@ -506,7 +499,6 @@ export class SmartMcp implements INodeType {
 					break;
 				}
 
-				// --- Other Manual Operations ---
 				case 'listResources': {
 					const result = await client.listResources();
 					returnData.push({ json: result as IDataObject });
@@ -518,32 +510,38 @@ export class SmartMcp implements INodeType {
 					break;
 				}
 				case 'readResource': {
-					const uri = this.getNodeParameter('resourceUri', 0) as string;
-					if (!uri) throw new NodeOperationError(this.getNode(), 'Resource URI is required for readResource operation', { itemIndex: 0 });
-					const result = await client.readResource({ uri });
-					let processedResult: unknown;
-					if (result && typeof result === 'object' && 'contents' in result && Array.isArray(result.contents) && result.contents.length > 0) {
-						const firstContent = result.contents[0];
-						if (firstContent && typeof firstContent === 'object' && 'text' in firstContent && typeof firstContent.text === 'string' && 'mimeType' in firstContent && firstContent.mimeType === 'application/json') {
-							try {
-								processedResult = JSON.parse(firstContent.text);
-								this.logger.debug(`Parsed JSON from first content for resource ${uri}`);
-							} catch (parseError) {
-								this.logger.warn(`Failed to parse JSON from first content for resource ${uri}: ${(parseError as Error).message}. Returning raw result object.`);
-								processedResult = result;
-							}
-						} else {
-							processedResult = result;
-						}
-					} else {
-						processedResult = result;
-					}
+					const resourceUri = this.getNodeParameter('resourceUri', 0) as string;
+					try {
+						const result = await client.readResource({ uri: resourceUri });
+						let processedResult: unknown = result;
 
-					if (processedResult && typeof processedResult === 'object') {
-						returnData.push({ json: processedResult as IDataObject });
-					} else {
-						this.logger.warn(`Processed resource for ${uri} is not a standard object, returning raw result object.`);
-						returnData.push({ json: { rawResult: result } as IDataObject });
+						// Attempt to parse JSON if mimeType indicates it
+						if (result.contents && result.contents.length > 0) {
+							const firstContent = result.contents[0];
+							if (firstContent && typeof firstContent === 'object' && 'text' in firstContent && typeof firstContent.text === 'string' && 'mimeType' in firstContent && firstContent.mimeType === 'application/json') {
+								try {
+									processedResult = JSON.parse(firstContent.text);
+									this.logger.debug(`Parsed JSON from first content for resource ${resourceUri}`);
+								} catch (parseError) {
+									this.logger.warn(`Failed to parse JSON from first content for resource ${resourceUri}: ${(parseError as Error).message}. Returning raw result object.`);
+								}
+							}
+						}
+
+						if (processedResult && typeof processedResult === 'object') {
+							returnData.push({ json: processedResult as IDataObject });
+						} else {
+							this.logger.warn(`Processed result for resource ${resourceUri} is not a standard object, returning raw result object.`);
+							returnData.push({ json: result as IDataObject });
+						}
+					} catch (error) {
+						this.logger.error(`Failed to read resource '${resourceUri}': ${(error as Error).message}`);
+						const description = typeof (error as McpError)?.data === 'object' ? JSON.stringify((error as McpError).data) : String((error as McpError)?.data ?? (error as Error).stack ?? '');
+						throw new NodeOperationError(
+							this.getNode(),
+							`Failed to read resource '${resourceUri}': ${(error as Error).message}`,
+							{ itemIndex: 0, description }
+						);
 					}
 					break;
 				}
@@ -559,25 +557,23 @@ export class SmartMcp implements INodeType {
 				}
 				case 'getPrompt': {
 					const promptName = this.getNodeParameter('promptName', 0) as string;
-					if (!promptName) throw new NodeOperationError(this.getNode(), 'Prompt Name is required for getPrompt operation', { itemIndex: 0 });
 					const result = await client.getPrompt({ name: promptName });
 					returnData.push({ json: result as IDataObject });
 					break;
 				}
 				default:
-					throw new NodeOperationError(this.getNode(), `Operation '${operation}' not supported`, { itemIndex: 0 });
+					throw new NodeOperationError(this.getNode(), `Unsupported operation: ${operation}`, { itemIndex: 0 });
 			}
-
-			return this.prepareOutputData(returnData);
-
 		} catch (error) {
-			await closeClientAndTransport(client);
-			if (error instanceof NodeOperationError) throw error;
-			this.logger.error(`Unhandled MCP Client Error: ${error}`);
+			await closeClientAndTransport(client); // Ensure cleanup on error
+			if (error instanceof NodeOperationError) throw error; // Re-throw known errors
+			this.logger.error(`Unhandled error in SmartMcp node: ${error}`);
 			const description = typeof (error as McpError)?.data === 'object' ? JSON.stringify((error as McpError).data) : String((error as McpError)?.data ?? (error as Error).stack ?? '');
-			throw new NodeOperationError(this.getNode(), `MCP Client Error: ${(error  as Error).message}`, { itemIndex: 0, description });
+			throw new NodeOperationError(this.getNode(), `Execution failed: ${(error as Error).message}`, { itemIndex: 0, description });
 		} finally {
-			await closeClientAndTransport(client);
+			await closeClientAndTransport(client); // Ensure cleanup in finally block
 		}
+
+		return [returnData];
 	}
 }
