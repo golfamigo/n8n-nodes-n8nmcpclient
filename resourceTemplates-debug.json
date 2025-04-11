@@ -1,0 +1,80 @@
+{
+  "status": "fulfilled",
+  "value": {
+    "resourceTemplates": [
+      {
+        "uriTemplate": "resource://user/{user_id}/businesses",
+        "name": "resource_user_businesses",
+        "description": "獲取指定用戶擁有的所有商家列表"
+      },
+      {
+        "uriTemplate": "resource://business/{business_id}/details",
+        "name": "resource_business_details",
+        "description": "獲取單個商家的詳細信息（名稱、類型、地址、電話、描述等）"
+      },
+      {
+        "uriTemplate": "resource://{business_id}/services",
+        "name": "resource_business_services",
+        "description": "獲取商家提供的所有服務列表"
+      },
+      {
+        "uriTemplate": "resource://business/{business_id}/staff",
+        "name": "resource_business_staff",
+        "description": "獲取商家的員工列表"
+      },
+      {
+        "uriTemplate": "resource://service/{service_id}/details",
+        "name": "resource_service_details",
+        "description": "獲取單個服務的詳細信息"
+      },
+      {
+        "uriTemplate": "resource://customer/{customer_id}/details",
+        "name": "resource_customer_details",
+        "description": "獲取單個客戶的詳細信息"
+      },
+      {
+        "uriTemplate": "resource://{business_id}/customers/search",
+        "name": "resource_search_customers",
+        "description": "獲取商家下的所有客戶列表 (搜索功能待改為 Tool)"
+      },
+      {
+        "uriTemplate": "resource://user/{user_id}/bookings",
+        "name": "resource_list_user_bookings",
+        "description": "獲取指定用戶的所有預約列表"
+      },
+      {
+        "uriTemplate": "resource://customer/{customer_id}/bookings",
+        "name": "resource_list_customer_bookings",
+        "description": "獲取指定客戶的所有預約列表"
+      },
+      {
+        "uriTemplate": "resource://business/{business_id}/bookings",
+        "name": "resource_list_business_bookings",
+        "description": "獲取指定商家的所有預約列表"
+      },
+      {
+        "uriTemplate": "resource://staff/{staff_id}/bookings",
+        "name": "resource_list_staff_bookings",
+        "description": "獲取指定員工服務的所有預約列表"
+      },
+      {
+        "uriTemplate": "resource://booking/{booking_id}/details",
+        "name": "resource_booking_details",
+        "description": "獲取單個預約的完整詳細信息"
+      },
+      {
+        "uriTemplate": "resource://{business_id}/hours",
+        "name": "resource_business_hours",
+        "description": "獲取商家的營業時間"
+      },
+      {
+        "uriTemplate": "resource://staff/{staff_id}/availability",
+        "name": "resource_staff_availability",
+        "description": "獲取員工的可用時間段"
+      }
+    ]
+  },
+  "hasTemplates": false,
+  "templatesCount": 0,
+  "firstTemplate": null
+}

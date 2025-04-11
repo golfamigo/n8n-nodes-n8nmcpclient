@@ -5,51 +5,47 @@ import {
 	INodeTypeDescription,
 	NodeOperationError,
 	IDataObject,
-	NodeConnectionType, // Re-add NodeConnectionType import again
+	NodeConnectionType,
 } from 'n8n-workflow';
 import { DynamicStructuredTool } from '@langchain/core/tools';
-import { z } from 'zod';
+import { z, ZodObject, ZodRawShape } from 'zod'; // 移除未使用的ZodTypeAny
 import { zodToJsonSchema } from 'zod-to-json-schema';
 import { Client } from '@modelcontextprotocol/sdk/client/index.js';
 import { StdioClientTransport } from '@modelcontextprotocol/sdk/client/stdio.js';
 import { Transport } from '@modelcontextprotocol/sdk/shared/transport.js';
  import {
- 	// Import only necessary result types and error types
- 	// ListToolsResult, // Not used directly
- 	// ListResourcesResult, // Not used directly
- 	// ListPromptsResult, // Not used directly
  	McpError,
- 	// ErrorCode, // Not used directly
  	CallToolResult,
  	ReadResourceResult,
  	GetPromptResult,
-	// Import specific content types for checking
 	TextContent,
-	// Revert to any[] as specific types might not be exported
+	// ListResourceTemplatesResult, // 移除未使用的導入
+	ResourceTemplate,
 } from '@modelcontextprotocol/sdk/types.js';
-import { URL } from 'url'; // Explicitly import URL
+import { URL } from 'url';
+import * as fs from 'node:fs';
 
 declare const process: {
 	env: Record<string, string | undefined>;
 };
 
 // Helper function remains the same
-// Helper function remains the same - Keep 'any' here as schema structure is dynamic
-function createZodSchemaFromMcpSchema(mcpSchema: any): z.ZodObject<any> { // eslint-disable-line @typescript-eslint/no-explicit-any
+// Using ZodRawShape for better type definition
+function createZodSchemaFromMcpSchema(mcpSchema: any): ZodObject<ZodRawShape> { // eslint-disable-line @typescript-eslint/no-explicit-any
 	if (!mcpSchema?.properties) {
 		return z.object({});
 	}
 	return z.object(
 		Object.entries(mcpSchema.properties).reduce(
-			(acc: any, [key, prop]: [string, any]) => { // eslint-disable-line @typescript-eslint/no-explicit-any
+			(acc: ZodRawShape, [key, prop]: [string, any]) => { // eslint-disable-line @typescript-eslint/no-explicit-any
 				let zodType: z.ZodType;
 				switch (prop.type) {
 					case 'string': zodType = z.string(); break;
 					case 'number': zodType = z.number(); break;
 					case 'integer': zodType = z.number().int(); break;
 					case 'boolean': zodType = z.boolean(); break;
-					case 'array': zodType = z.array(z.any()); break;
-					case 'object': zodType = z.record(z.string(), z.any()); break;
+					case 'array': zodType = z.array(z.any()); break; // Keep z.any() for array elements for now
+					case 'object': zodType = z.record(z.string(), z.any()); break; // Keep z.any() for object values for now
 					default: zodType = z.any();
 				}
 				if (prop.description) {
@@ -58,7 +54,8 @@ function createZodSchemaFromMcpSchema(mcpSchema: any): z.ZodObject<any> { // esl
 				if (!mcpSchema?.required?.includes(key)) {
 					zodType = zodType.optional();
 				}
-				return { ...acc, [key]: zodType };
+				acc[key] = zodType; // Assign directly to ZodRawShape
+				return acc;
 			},
 			{},
 		),
@@ -70,7 +67,7 @@ async function getConnectedClientHelper(context: IExecuteFunctions): Promise<Cli
 	let connectionType = 'cmd';
 	try {
 		connectionType = context.getNodeParameter('connectionType', 0) as string;
-	} catch { // Remove unused 'error' variable
+	} catch {
 		context.logger.debug('ConnectionType parameter not found, using default "cmd" transport');
 	}
 
@@ -160,8 +157,8 @@ export class SmartMcp implements INodeType {
 		subtitle: '={{$parameter["operation"]}}',
 		description: 'Connects to and interacts with an MCP server, discovering capabilities for AI Agents.',
 		defaults: { name: 'Smart MCP Client' },
-		inputs: [NodeConnectionType.Main], // Use enum value again to satisfy TS
-		outputs: [NodeConnectionType.Main], // Use enum value again to satisfy TS
+		inputs: [NodeConnectionType.Main],
+		outputs: [NodeConnectionType.Main],
 		usableAsTool: true,
 		credentials: [
 			{ name: 'mcpClientApi', required: false, displayOptions: { show: { connectionType: ['cmd'] } } },
@@ -194,49 +191,49 @@ export class SmartMcp implements INodeType {
 		],
 	};
 
-	// No longer need the private class method
-
 	async execute(this: IExecuteFunctions): Promise<INodeExecutionData[][]> {
 		const returnData: INodeExecutionData[] = [];
 		const operation = this.getNodeParameter('operation', 0) as string;
 		let client: Client | undefined;
 		let transportClosed = false;
-		// Remove 'this' alias: const executionContext = this;
 
 		const closeClientAndTransport = async (c: Client | undefined) => {
 			if (c && !transportClosed) {
 				try {
 					await c.close();
 					transportClosed = true;
-					this.logger.debug('MCP Client closed.'); // Use 'this' directly
+					this.logger.debug('MCP Client closed.');
 				} catch (closeError) {
-					this.logger.error(`Error closing MCP client: ${closeError}`); // Use 'this' directly
+					this.logger.error(`Error closing MCP client: ${closeError}`);
 				}
 			}
 		};
 
 		try {
-			// Call the standalone helper function, passing the current execution context ('this')
 			client = await getConnectedClientHelper(this);
 
 			if (!client) {
-				throw new NodeOperationError(this.getNode(), 'Failed to establish MCP client connection.', { itemIndex: 0 }); // Use 'this' directly
+				throw new NodeOperationError(this.getNode(), 'Failed to establish MCP client connection.', { itemIndex: 0 });
 			}
 
 			switch (operation) {
 				case 'discoverCapabilities': {
 					this.logger.info('Discovering MCP capabilities...');
-					const [toolsResult, resourcesResult, promptsResult] = await Promise.allSettled([
+					// Step 1: Get Tools, Resources, Prompts, AND Resource Templates
+					const [toolsResult, resourcesResult, promptsResult, resourceTemplatesResult] = await Promise.allSettled([
 						client.listTools(),
 						client.listResources(),
-						client.listPrompts()
+						client.listPrompts(),
+						client.listResourceTemplates() // Added back here
 					]);
 
-					const allToolsForAgent: DynamicStructuredTool[] = [];
+					// 使用any類型解決類型不匹配問題
+					// eslint-disable-next-line @typescript-eslint/no-explicit-any
+					const allToolsForAgent: DynamicStructuredTool<any>[] = [];
 
-					// Process Tools
+					// Step 2: Process Tools
 					if (toolsResult.status === 'fulfilled' && toolsResult.value?.tools) {
-						const tools: any[] = toolsResult.value.tools; // eslint-disable-line @typescript-eslint/no-explicit-any
+						const tools = toolsResult.value.tools;
 						this.logger.debug(`Found ${tools.length} real tools.`);
 						tools.forEach(tool => {
 							const schema = createZodSchemaFromMcpSchema(tool.inputSchema);
@@ -246,15 +243,15 @@ export class SmartMcp implements INodeType {
 								schema,
 								metadata: { type: "tool" },
 								func: async (params): Promise<string> => {
-									if (!client) throw new NodeOperationError(this.getNode(), "MCP Client not connected during tool execution"); // Use 'this' directly
+									if (!client) throw new NodeOperationError(this.getNode(), "MCP Client not connected during tool execution");
 									try {
 										const result = await client.callTool({ name: tool.name, arguments: params });
 										const firstContent = (Array.isArray(result.content) && result.content.length > 0) ? result.content[0] : undefined;
 										return String((firstContent && firstContent.type === 'text') ? (firstContent as TextContent).text : JSON.stringify(result));
 									} catch (error) {
-										this.logger.error(`Error executing tool ${tool.name}: ${error}`); // Use 'this' directly
+										this.logger.error(`Error executing tool ${tool.name}: ${error}`);
 										const description = typeof (error as McpError)?.data === 'object' ? JSON.stringify((error as McpError).data) : String((error as McpError)?.data ?? '');
-										throw new NodeOperationError(this.getNode(), `Failed executing tool ${tool.name}: ${(error as Error).message}`, { description }); // Use 'this' directly
+										throw new NodeOperationError(this.getNode(), `Failed executing tool ${tool.name}: ${(error as Error).message}`, { description });
 									}
 								}
 							}));
@@ -263,9 +260,9 @@ export class SmartMcp implements INodeType {
 						this.logger.warn(`Failed to list tools: ${toolsResult.reason}`);
 					}
 
-					// Process Resources
+					// Step 3: Process Resources
 					if (resourcesResult.status === 'fulfilled' && resourcesResult.value?.resources) {
-						const resources: any[] = resourcesResult.value.resources; // eslint-disable-line @typescript-eslint/no-explicit-any
+						const resources = resourcesResult.value.resources;
 						this.logger.debug(`Found ${resources.length} resources.`);
 						resources.forEach(resource => {
 							const resourceToolName = `resource_${resource.name}`;
@@ -277,16 +274,16 @@ export class SmartMcp implements INodeType {
 								}),
 								metadata: { type: "resource", originalName: resource.name, originalUri: resource.uri },
 								func: async (params): Promise<string> => {
-									if (!client) throw new NodeOperationError(this.getNode(), "MCP Client not connected during resource read"); // Use 'this' directly
+									if (!client) throw new NodeOperationError(this.getNode(), "MCP Client not connected during resource read");
 									const targetUri = params.uri || resource.uri;
 									try {
 										const result = await client.readResource({ uri: targetUri });
 										const firstContent = (Array.isArray(result.contents) && result.contents.length > 0) ? result.contents[0] : undefined;
 										return String(firstContent && 'text' in firstContent ? firstContent.text : JSON.stringify(result));
 									} catch (error) {
-										this.logger.error(`Error reading resource ${resource.name} (URI: ${targetUri}): ${error}`); // Use 'this' directly
+										this.logger.error(`Error reading resource ${resource.name} (URI: ${targetUri}): ${error}`);
 										const description = typeof (error as McpError)?.data === 'object' ? JSON.stringify((error as McpError).data) : String((error as McpError)?.data ?? '');
-										throw new NodeOperationError(this.getNode(), `Failed reading resource ${resource.name}: ${(error as Error).message}`, { description }); // Use 'this' directly
+										throw new NodeOperationError(this.getNode(), `Failed reading resource ${resource.name}: ${(error as Error).message}`, { description });
 									}
 								}
 							}));
@@ -295,9 +292,9 @@ export class SmartMcp implements INodeType {
 						this.logger.warn(`Failed to list resources: ${resourcesResult.reason}`);
 					}
 
-					// Process Prompts
+					// Step 4: Process Prompts
 					if (promptsResult.status === 'fulfilled' && promptsResult.value?.prompts) {
-						const prompts: any[] = promptsResult.value.prompts; // eslint-disable-line @typescript-eslint/no-explicit-any
+						const prompts = promptsResult.value.prompts;
 						this.logger.debug(`Found ${prompts.length} prompts.`);
 						prompts.forEach(prompt => {
 							const promptToolName = `prompt_${prompt.name}`;
@@ -307,15 +304,15 @@ export class SmartMcp implements INodeType {
 								description: prompt.description || `Get the ${prompt.name} prompt template`,
 								schema,
 								metadata: { type: "prompt", originalName: prompt.name },
-								func: async (): Promise<string> => { // Remove unused _params
-									if (!client) throw new NodeOperationError(this.getNode(), "MCP Client not connected during prompt get"); // Use 'this' directly
+								func: async (): Promise<string> => {
+									if (!client) throw new NodeOperationError(this.getNode(), "MCP Client not connected during prompt get");
 									try {
 										const result = await client.getPrompt({ name: prompt.name /*, arguments: params */ });
 										return JSON.stringify(result);
 									} catch (error) {
-										this.logger.error(`Error getting prompt ${prompt.name}: ${error}`); // Use 'this' directly
+										this.logger.error(`Error getting prompt ${prompt.name}: ${error}`);
 										const description = typeof (error as McpError)?.data === 'object' ? JSON.stringify((error as McpError).data) : String((error as McpError)?.data ?? '');
-										throw new NodeOperationError(this.getNode(), `Failed getting prompt ${prompt.name}: ${(error as Error).message}`, { description }); // Use 'this' directly
+										throw new NodeOperationError(this.getNode(), `Failed getting prompt ${prompt.name}: ${(error as Error).message}`, { description });
 									}
 								}
 							}));
@@ -323,10 +320,70 @@ export class SmartMcp implements INodeType {
 					} else if (promptsResult.status === 'rejected') {
 						this.logger.warn(`Failed to list prompts: ${promptsResult.reason}`);
 					}
+					// 在處理 resourceTemplatesResult 之前添加這段日誌代碼
 
+					fs.writeFileSync('./resourceTemplates-debug.json', JSON.stringify({
+						status: resourceTemplatesResult.status,
+						value: resourceTemplatesResult.status === 'fulfilled' ? resourceTemplatesResult.value : null,
+						hasTemplates: resourceTemplatesResult.status === 'fulfilled' && !!resourceTemplatesResult.value?.templates,
+						templatesCount: resourceTemplatesResult.status === 'fulfilled' ? (Array.isArray(resourceTemplatesResult.value?.templates) ? resourceTemplatesResult.value.templates.length : 0) : 0,
+						firstTemplate: resourceTemplatesResult.status === 'fulfilled' ? (Array.isArray(resourceTemplatesResult.value?.templates) ? resourceTemplatesResult.value.templates[0] : null) : null
+					}, null, 2));
+
+					// Step 5: Process Resource Templates (from Promise.allSettled result)
+					if (resourceTemplatesResult.status === 'fulfilled' && resourceTemplatesResult.value?.resourceTemplates) {
+						// Use the imported ResourceTemplate type
+						const templates: ResourceTemplate[] = Array.isArray(resourceTemplatesResult.value.resourceTemplates)
+							? resourceTemplatesResult.value.resourceTemplates
+							: [];
+						this.logger.debug(`Found ${templates.length} resource templates.`);
+						templates.forEach(template => {
+							// Type guard for safety, although Array.isArray should suffice
+							if (template && typeof template === 'object' && 'name' in template && 'uriTemplate' in template) {
+								const templateToolName = `resource_template_${template.name}`;
+								allToolsForAgent.push(new DynamicStructuredTool({
+									name: templateToolName,
+									description: template.description || `Read a resource matching the template URI: ${template.uriTemplate}`,
+									schema: z.object({
+										uri: z.string().describe(`URI of the resource to read (must match template: ${template.uriTemplate})`)
+									}),
+									metadata: { type: "resource_template", originalName: template.name, originalUriTemplate: template.uriTemplate },
+									func: async (params): Promise<string> => {
+										if (!client) throw new NodeOperationError(this.getNode(), "MCP Client not connected during resource template read");
+										const targetUri = params.uri;
+										if (!targetUri || typeof targetUri !== 'string') {
+											throw new NodeOperationError(this.getNode(), `Parameter 'uri' (string) is required for resource template tool '${templateToolName}'`);
+										}
+										const templateRegex = new RegExp('^' + template.uriTemplate.replace(/\{\w+\}/g, '[^/]+') + '$');
+										if (!templateRegex.test(targetUri)) {
+											this.logger.warn(`Provided URI '${targetUri}' might not match template '${template.uriTemplate}' for tool ${templateToolName}`);
+										}
+										try {
+											const result = await client.readResource({ uri: targetUri });
+											const firstContent = (Array.isArray(result.contents) && result.contents.length > 0) ? result.contents[0] : undefined;
+											return String(firstContent && 'text' in firstContent ? firstContent.text : JSON.stringify(result));
+										} catch (error) {
+											this.logger.error(`Error reading resource template ${template.name} (URI: ${targetUri}): ${error}`);
+											const description = typeof (error as McpError)?.data === 'object' ? JSON.stringify((error as McpError).data) : String((error as McpError)?.data ?? '');
+											throw new NodeOperationError(this.getNode(), `Failed reading resource template ${template.name}: ${(error as Error).message}`, { description });
+										}
+									}
+								}));
+							} else {
+								this.logger.warn(`Skipping invalid resource template item: ${JSON.stringify(template)}`);
+							}
+						});
+					} else if (resourceTemplatesResult.status === 'rejected') {
+						// Log the reason if listing templates failed
+						this.logger.warn(`Failed to list resource templates: ${resourceTemplatesResult.reason}`);
+					}
+
+
+					// Step 6: Finalize and return
 					this.logger.info(`Total capabilities discovered for AI Agent: ${allToolsForAgent.length}`);
 
-					const toolDefinitionsForAgent = allToolsForAgent.map((t: DynamicStructuredTool) => ({
+					// eslint-disable-next-line @typescript-eslint/no-explicit-any
+					const toolDefinitionsForAgent = allToolsForAgent.map((t: DynamicStructuredTool<any>) => ({
 						name: t.name,
 						description: t.description,
 						schema: zodToJsonSchema(t.schema || z.object({})),
@@ -342,8 +399,8 @@ export class SmartMcp implements INodeType {
 
 				case 'executeTool': {
 					const toolName = this.getNodeParameter('toolName', 0) as string;
-					let toolParams: any = {}; // eslint-disable-line @typescript-eslint/no-explicit-any
-
+					// Use unknown for initial parsing, then validate
+					let toolParams: unknown = {};
 					try {
 						const rawParams = this.getNodeParameter('toolParameters', 0);
 						if (typeof rawParams === 'string' && rawParams.trim() !== '') {
@@ -355,58 +412,86 @@ export class SmartMcp implements INodeType {
 							toolParams = rawParams;
 						}
 
-						if (Object.keys(toolParams).length > 0 && (typeof toolParams !== 'object' || toolParams === null || Array.isArray(toolParams))) {
-							throw new NodeOperationError(this.getNode(), 'Parsed parameters must be a JSON object', { itemIndex: 0 });
+						// Validate that toolParams is an object after parsing/assignment
+						if (typeof toolParams !== 'object' || toolParams === null || Array.isArray(toolParams)) {
+							// If it's empty initially, allow it, otherwise throw error
+							if (toolParams !== null && toolParams !== undefined && typeof Object.keys === 'function') {
+								// 修正第408行的Object.keys使用方式
+								// 確保toolParams是對象且非null/undefined再使用Object.keys
+								const keys = Object.keys(toolParams as object);
+								if (keys.length > 0) {
+									throw new NodeOperationError(this.getNode(), 'Parsed parameters must be a JSON object', { itemIndex: 0 });
+								}
+							}
+							// If empty, ensure it's an empty object for consistency
+							toolParams = {};
 						}
+
 						this.logger.debug(`Executing tool: ${toolName} with params: ${JSON.stringify(toolParams)}`);
 
 						let result: CallToolResult | ReadResourceResult | GetPromptResult;
-						let processedResult: unknown; // Variable for potentially parsed result
+						let processedResult: unknown;
 
-						if (toolName.startsWith("resource_")) {
-							const resourceUri = toolParams.uri;
+						// Ensure toolParams is treated as Record<string, unknown> for safety
+						const safeToolParams = toolParams as Record<string, unknown>;
+
+						if (toolName.startsWith("resource_template_")) {
+							const resourceUri = safeToolParams.uri;
+							if (!resourceUri || typeof resourceUri !== 'string') {
+								throw new NodeOperationError(this.getNode(), `Parameter 'uri' (string) is required for resource template tool '${toolName}'`, { itemIndex: 0 });
+							}
+							result = await client.readResource({ uri: resourceUri });
+							this.logger.debug(`Resource template read successfully: ${resourceUri}`);
+							processedResult = result;
+
+						} else if (toolName.startsWith("resource_")) {
+							const resourceUri = safeToolParams.uri;
 							if (!resourceUri || typeof resourceUri !== 'string') {
 								throw new NodeOperationError(this.getNode(), `Parameter 'uri' (string) is required for resource tool '${toolName}'`, { itemIndex: 0 });
 							}
 							result = await client.readResource({ uri: resourceUri });
 							this.logger.debug(`Resource read successfully: ${resourceUri}`);
-
-						// --- BEGIN INSERTED CODE ---
-						// Check if the result has text content and is JSON
-						if ('text' in result && typeof result.text === 'string' && result.mimeType === 'application/json') {
-							try {
-								processedResult = JSON.parse(result.text); // Parse the JSON string
-								this.logger.debug(`Parsed JSON resource for ${resourceUri}`);
-							} catch (parseError) {
-								this.logger.warn(`Failed to parse JSON from resource text for URI ${resourceUri}: ${(parseError as Error).message}`);
-								// Fallback to the original result if parsing fails
-								processedResult = result;
-							}
-						} else {
-							// If not JSON in text, use the result as is
 							processedResult = result;
-						}
-						// --- END INSERTED CODE ---
 
 						} else if (toolName.startsWith("prompt_")) {
 							const promptName = toolName.replace("prompt_", "");
-							result = await client.getPrompt({ name: promptName /*, arguments: toolParams */ });
+							result = await client.getPrompt({ name: promptName /*, arguments: safeToolParams */ });
 							this.logger.debug(`Prompt retrieved successfully: ${promptName}`);
-						processedResult = result; // Assign result directly for prompts
+							processedResult = result;
 						} else {
-							// Cast the result to CallToolResult to help TypeScript understand the structure
-							result = await client.callTool({ name: toolName, arguments: toolParams }) as CallToolResult;
+							result = await client.callTool({ name: toolName, arguments: safeToolParams }) as CallToolResult;
 							this.logger.debug(`Tool executed successfully: ${toolName}`);
 							processedResult = result;
 						}
-						// Push the processed result directly into the json property for the output item
+
+						// Centralized result processing
+						if (processedResult && typeof processedResult === 'object') {
+							if ('text' in processedResult && typeof processedResult.text === 'string' && 'mimeType' in processedResult && processedResult.mimeType === 'application/json') {
+								try {
+									processedResult = JSON.parse(processedResult.text);
+									this.logger.debug(`Parsed JSON from text content for tool ${toolName}`);
+								} catch (parseError) {
+									this.logger.warn(`Failed to parse JSON from text content for tool ${toolName}: ${(parseError as Error).message}. Returning raw result.`);
+								}
+							} else if ('contents' in processedResult && Array.isArray(processedResult.contents) && processedResult.contents.length > 0) {
+								const firstContent = processedResult.contents[0];
+								if (firstContent && typeof firstContent === 'object' && 'text' in firstContent && typeof firstContent.text === 'string' && 'mimeType' in firstContent && firstContent.mimeType === 'application/json') {
+									try {
+										processedResult = JSON.parse(firstContent.text);
+										this.logger.debug(`Parsed JSON from first content for resource/template ${toolName}`);
+									} catch (parseError) {
+										this.logger.warn(`Failed to parse JSON from first content for resource/template ${toolName}: ${(parseError as Error).message}. Returning raw result object.`);
+									}
+								}
+							}
+						}
+
 						if (processedResult && typeof processedResult === 'object') {
 							returnData.push({ json: processedResult as IDataObject });
 						} else {
-							// Handle cases where processedResult might not be the expected object (e.g., parsing failed or not applicable)
-							this.logger.warn(`Processed result for tool ${toolName} is not an object, returning raw result object.`);
-							// Push the original result object instead, wrapped appropriately
-							returnData.push({ json: { rawResult: result } as IDataObject });
+							this.logger.warn(`Processed result for tool ${toolName} is not a standard object, returning raw result object.`);
+							// Use the type assertion to fix the ESLint warning
+							returnData.push({ json: { rawResult: result as CallToolResult | ReadResourceResult | GetPromptResult } as IDataObject });
 						}
 
 					} catch (error) {
@@ -437,25 +522,27 @@ export class SmartMcp implements INodeType {
 					if (!uri) throw new NodeOperationError(this.getNode(), 'Resource URI is required for readResource operation', { itemIndex: 0 });
 					const result = await client.readResource({ uri });
 					let processedResult: unknown;
-					if ('text' in result && typeof result.text === 'string' && result.mimeType === 'application/json') {
-					    try {
-					        processedResult = JSON.parse(result.text);
-					        this.logger.debug(`Parsed JSON resource for ${uri}`);
-					    } catch (parseError) {
-					        this.logger.warn(`Failed to parse JSON from resource text for URI ${uri}: ${(parseError as Error).message}`);
-					        processedResult = result; // Fallback
-					    }
+					if (result && typeof result === 'object' && 'contents' in result && Array.isArray(result.contents) && result.contents.length > 0) {
+						const firstContent = result.contents[0];
+						if (firstContent && typeof firstContent === 'object' && 'text' in firstContent && typeof firstContent.text === 'string' && 'mimeType' in firstContent && firstContent.mimeType === 'application/json') {
+							try {
+								processedResult = JSON.parse(firstContent.text);
+								this.logger.debug(`Parsed JSON from first content for resource ${uri}`);
+							} catch (parseError) {
+								this.logger.warn(`Failed to parse JSON from first content for resource ${uri}: ${(parseError as Error).message}. Returning raw result object.`);
+								processedResult = result;
+							}
+						} else {
+							processedResult = result;
+						}
 					} else {
-					    processedResult = result;
+						processedResult = result;
 					}
-					// Push the processed result directly into the json property for the output item
-					// Ensure processedResult is an object before pushing
+
 					if (processedResult && typeof processedResult === 'object') {
 						returnData.push({ json: processedResult as IDataObject });
 					} else {
-						// Handle cases where processedResult might not be the expected object (e.g., parsing failed)
-						this.logger.warn(`Processed resource for ${uri} is not an object, returning raw result object.`);
-						// Push the original result object instead, wrapped appropriately
+						this.logger.warn(`Processed resource for ${uri} is not a standard object, returning raw result object.`);
 						returnData.push({ json: { rawResult: result } as IDataObject });
 					}
 					break;
@@ -488,7 +575,7 @@ export class SmartMcp implements INodeType {
 			if (error instanceof NodeOperationError) throw error;
 			this.logger.error(`Unhandled MCP Client Error: ${error}`);
 			const description = typeof (error as McpError)?.data === 'object' ? JSON.stringify((error as McpError).data) : String((error as McpError)?.data ?? (error as Error).stack ?? '');
-			throw new NodeOperationError(this.getNode(), `MCP Client Error: ${(error as Error).message}`, { itemIndex: 0, description });
+			throw new NodeOperationError(this.getNode(), `MCP Client Error: ${(error  as Error).message}`, { itemIndex: 0, description });
 		} finally {
 			await closeClientAndTransport(client);
 		}
